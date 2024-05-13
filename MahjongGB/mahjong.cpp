@@ -155,6 +155,19 @@ static PyObject *MahjongFanCalculator(PyObject *self, PyObject *args, PyObject *
 	}
 }
 
+
+static void update_shanten_and_table(int &re, int cur_re, mahjong::useful_table_t &re_useful_table, const mahjong::useful_table_t &useful_table);
+
+static void update_shanten_and_table(int &re, int cur_re, mahjong::useful_table_t &re_useful_table, const mahjong::useful_table_t &useful_table) {
+	if (cur_re < re) {
+		re = cur_re;
+		memcpy(re_useful_table, useful_table, sizeof(re_useful_table));
+	} else if (cur_re == re) {
+		for (int i = 0; i < 34; ++i)
+			re_useful_table[mahjong::all_tiles[i]] |= useful_table[mahjong::all_tiles[i]];
+	}
+}
+
 static PyObject *MahjongShanten(PyObject *self, PyObject *args, PyObject *kwargs) {
 	try {
 		// Parse arguments
@@ -195,13 +208,31 @@ static PyObject *MahjongShanten(PyObject *self, PyObject *args, PyObject *kwargs
 			hand_tiles.standing_tiles[i] = str2tile[tile];
 		}
 		int re = numeric_limits<int>::max();
-		re = min(re, mahjong::thirteen_orphans_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count, nullptr));
-		re = min(re, mahjong::seven_pairs_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count, nullptr));
-		re = min(re, mahjong::honors_and_knitted_tiles_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count, nullptr));
-		re = min(re, mahjong::knitted_straight_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count, nullptr));
-		re = min(re, mahjong::basic_form_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count, nullptr));
+		int cur_re;
+		mahjong::useful_table_t useful_table; 
+		mahjong::useful_table_t re_useful_table; 
+
+		cur_re = mahjong::thirteen_orphans_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count, &useful_table);
+		re = cur_re;
+		memcpy(&re_useful_table, &useful_table, sizeof(re_useful_table));
+		cur_re = mahjong::seven_pairs_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count,  &useful_table);
+		update_shanten_and_table(re, cur_re, re_useful_table, useful_table);
+		cur_re = mahjong::honors_and_knitted_tiles_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count,  &useful_table);
+		update_shanten_and_table(re, cur_re, re_useful_table, useful_table);
+		cur_re = mahjong::knitted_straight_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count,  &useful_table);
+		update_shanten_and_table(re, cur_re, re_useful_table, useful_table);
+		cur_re = mahjong::basic_form_shanten(hand_tiles.standing_tiles, hand_tiles.tile_count,  &useful_table);
+		update_shanten_and_table(re, cur_re, re_useful_table, useful_table);
 		if (re == numeric_limits<int>::max()) throw "ERROR_INVALID_HAND_OR_PACK";
-		PyObject *ans = Py_BuildValue("i", re);
+		int usefulSize = 0, l = 0; 
+		for(int i = 0; i < 34; ++i) 
+			if(re_useful_table[mahjong::all_tiles[i]]) 
+				++usefulSize; \
+		PyObject *useful = PyTuple_New(usefulSize); 
+		for(int i = 0; i < 34; ++i) \
+			if(re_useful_table[mahjong::all_tiles[i]]) 
+				PyTuple_SetItem(useful, l++, Py_BuildValue("s", tile2str[i])); 
+		PyObject *ans = Py_BuildValue("(iO)", re, useful); 
 		return ans;
 	} catch (const char *msg) {
 		PyErr_SetString(PyExc_TypeError, msg);
